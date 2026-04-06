@@ -23,8 +23,8 @@ from src.ingestion.resources import FastF1Resource
 
 
 def _parse_partition_key(context: AssetExecutionContext) -> tuple[int, int]:
-    """Extract (season, round) integers from a MultiPartitionKey."""
-    keys = context.partition_key.keys_by_dimension
+    """Extract (season, round) integers from the job partition (multi-dimensional)."""
+    keys = context.multi_partition_key.keys_by_dimension
     return int(keys["season"]), int(keys["round"])
 
 

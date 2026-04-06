@@ -126,14 +126,13 @@ Build a Dagster pipeline that pulls historical race data from FastF1 and writes 
 **Tasks:**
 
 - [ ] Set up Python environment with `fastf1`, `dagster`, `pandas`, `pyarrow`
-- [ ] Write a Dagster asset `raw_session_data` that, given a season year and round number, downloads:
-  - Session metadata (event name, date, circuit, session type)
-  - Lap-by-lap timing for all drivers (lap number, lap time, sector times, pit in/out laps)
-  - Car telemetry at ~4 Hz (speed, RPM, gear, throttle %, brake %, DRS status)
-  - Weather data per lap (air temp, track temp, humidity, rainfall, wind speed/direction)
-- [ ] Write a Dagster asset `raw_tire_data` that extracts compound assignments and stint boundaries per driver
+- [ ] Write Dagster assets (multi-partitioned by season + round) that download FastF1 data into Parquet:
+  - `raw_session_metadata` — event/session metadata (name, date, location, session type, format)
+  - `raw_lap_data` — lap-by-lap timing (sectors, pit in/out); includes compound, tyre life, and stint columns per lap
+  - `raw_telemetry_data` — car telemetry (~4 Hz: speed, RPM, gear, throttle, brake, DRS, etc.), per session and driver
+  - `raw_weather_data` — session weather (air/track temp, humidity, rainfall, wind)
 - [ ] Implement incremental loading: track which (season, round) pairs have been ingested; skip re-downloading
-- [ ] Backfill seasons 2021–2025 to build a training corpus
+- [ ] Backfill seasons 2021–2025 to build a training corpus (partition grid is defined in code; materialize each pair via the job or UI)
 - [ ] Store raw data in `data/raw/{season}/{round}/` as Parquet files, partitioned by session type
 
 **Key Files:**
@@ -562,8 +561,8 @@ cd feature_repo && feast apply && cd ..
 # Start MLflow tracking server
 mlflow server --backend-store-uri sqlite:///mlflow.db --default-artifact-root ./mlartifacts --port 5000
 
-# Run the ingestion pipeline (backfill 2024 season)
-dagster job execute -j ingest_season -c '{"ops": {"raw_session_data": {"config": {"season": 2024}}}}'
+# Run the ingestion job for one weekend partition (round | season, e.g. round 5, 2024)
+dagster job execute -m src.ingestion -a defs -j ingest_race_weekend --tags '{"dagster/partition": "5|2024"}'
 ```
 
 ### Run the Full Stack (Phase 4)
