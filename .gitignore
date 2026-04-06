@@ -7,9 +7,6 @@ build/
 .venv/
 venv/
 
-# FastF1 cache (regeneratable; can exceed GitHub's 100 MB file limit)
-data/fastf1_cache/
-
 # MLflow
 mlartifacts/
 mlflow.db

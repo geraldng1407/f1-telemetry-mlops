@@ -1,0 +1,1 @@
+data/fastf1_cache/** filter=lfs diff=lfs merge=lfs -text
