@@ -1,0 +1,11 @@
+location,circuit_name,high_speed_corners,medium_speed_corners,low_speed_corners,surface_abrasiveness,altitude_m,tire_limitation,street_circuit
+Melbourne,Albert Park,4,6,4,2,3,rear,false
+Sakhir,Bahrain International Circuit,3,5,7,4,7,rear,false
+Jeddah,Jeddah Corniche Circuit,8,6,3,2,15,rear,true
+Monaco,Circuit de Monaco,0,4,15,1,30,front,true
+Barcelona,Circuit de Barcelona-Catalunya,5,4,7,3,125,front,false
+Silverstone,Silverstone Circuit,7,3,4,3,150,front,false
+Monza,Autodromo Nazionale Monza,6,3,2,2,162,rear,false
+Spa-Francorchamps,Circuit de Spa-Francorchamps,7,4,3,3,400,rear,false
+Suzuka,Suzuka International Racing Course,6,5,5,3,45,front,false
+Marina Bay,Marina Bay Street Circuit,1,5,17,2,6,rear,true
