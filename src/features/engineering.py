@@ -22,6 +22,7 @@ from src.features.constants import (
     ROLLING_WINDOWS,
     SC_TRACK_STATUS_CODES,
     SECTOR_TIME_COLUMNS,
+    SESSION_HOUR_OFFSETS,
 )
 
 
@@ -287,6 +288,46 @@ def _add_circuit_features(
 
 
 # ---------------------------------------------------------------------------
+# Feast Entity Keys
+# ---------------------------------------------------------------------------
+
+
+def _add_feast_keys(
+    df: pd.DataFrame,
+    season: int,
+    round_num: int,
+    session_type: str,
+    event_date: str | None,
+    location: str | None,
+) -> pd.DataFrame:
+    """Add Feast-compatible entity keys and event_timestamp.
+
+    Keys: session_id, driver_number, stint_number, location, event_timestamp.
+    The event_timestamp is synthesized from event_date + a per-session hour
+    offset + the LapStartTime offset so that each lap in every session has a
+    unique, chronologically ordered timestamp.
+    """
+    df = df.copy()
+    safe_session = session_type.replace(" ", "_")
+
+    df["session_id"] = f"{season}_{round_num}_{safe_session}"
+    df["driver_number"] = df["DriverNumber"].astype(str)
+    df["stint_number"] = df["Stint"].fillna(0).astype(int)
+    df["location"] = location if location else ""
+
+    hour_offset = SESSION_HOUR_OFFSETS.get(safe_session, 0)
+    if event_date is not None and "LapStartTime" in df.columns:
+        base = pd.Timestamp(event_date) + pd.Timedelta(hours=hour_offset)
+        lap_offsets = pd.to_timedelta(df["LapStartTime"].fillna(0), unit="s")
+        df["event_timestamp"] = base + lap_offsets
+    else:
+        df["event_timestamp"] = pd.Timestamp("1970-01-01")
+
+    df["event_timestamp"] = df["event_timestamp"].fillna(pd.Timestamp("1970-01-01"))
+    return df
+
+
+# ---------------------------------------------------------------------------
 # Lap Flags (edge-case markers)
 # ---------------------------------------------------------------------------
 
@@ -344,9 +385,12 @@ def engineer_features_for_session(
     circuit_ref = _load_circuit_reference(circuit_ref_path)
 
     location: str | None = None
+    event_date_str: str | None = None
     if meta_df is not None:
         meta_row = meta_df.iloc[0]
         location = str(meta_row["location"])
+        if "event_date" in meta_row.index:
+            event_date_str = str(meta_row["event_date"])
 
     # --- Apply feature groups sequentially ---
     logger.info(
@@ -365,6 +409,7 @@ def engineer_features_for_session(
     df = _add_environmental_features(df, weather_df)
     df = _add_dirty_air_features(df)
     df = _add_circuit_features(df, circuit_ref, location)
+    df = _add_feast_keys(df, season, round_num, session_type, event_date_str, location)
 
     # --- Write output ---
     out_path = output_dir / str(season) / str(round_num) / f"features_{safe_session}.parquet"

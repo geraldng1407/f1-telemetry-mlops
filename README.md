@@ -180,16 +180,51 @@ Register features in Feast for reproducible training and low-latency online serv
 
 **Tasks:**
 
-- [ ] Initialize a Feast feature repository in `feature_repo/`
-- [ ] Define **Entity**: `driver_stint` (composite key of `session_id + driver_number + stint_number`)
-- [ ] Define **Feature Views**:
+- [x] Initialize a Feast feature repository in `feature_repo/`
+- [x] Define **Entities**: `session`, `driver`, `stint` (composite join keys: `session_id + driver_number + stint_number`); `circuit` (join key: `location`)
+- [x] Define **Feature Views**:
   - `stint_telemetry_features` — dynamic per-lap features sourced from the offline Parquet store
   - `circuit_features` — static track characteristics sourced from a reference CSV
   - `weather_features` — per-lap environmental data
-- [ ] Define **Feature Services** that bundle the views needed for training vs. inference
-- [ ] Configure an **offline store** (file-based or BigQuery) for `get_historical_features()` calls during training
-- [ ] Configure an **online store** (SQLite for local dev, Redis for production) for real-time feature retrieval
-- [ ] Write integration tests: materialize features, retrieve them, assert schema and value ranges
+- [x] Define **Feature Services** that bundle the views needed for training vs. inference
+- [x] Configure an **offline store** (file-based) for `get_historical_features()` calls during training
+- [x] Configure an **online store** (SQLite for local dev, Redis for production) for real-time feature retrieval
+- [x] Write integration tests: materialize features, retrieve them, assert schema and value ranges
+
+**Key Files:**
+
+```
+feature_repo/
+├── feature_store.yaml         # Offline (file) + online (SQLite) store config
+├── entities.py                # session, driver, stint, circuit entities
+├── feature_views.py           # stint_telemetry_features, weather_features, circuit_features
+└── feature_services.py        # training_feature_service, inference_feature_service
+
+src/features/
+├── feast_prep.py              # Consolidate processed parquets into Feast data sources
+├── engineering.py             # (updated) adds Feast entity keys & event_timestamp
+└── constants.py               # (updated) FEAST_DATA_DIR, SESSION_HOUR_OFFSETS
+
+tests/
+├── conftest.py                # Shared fixtures (project_root, feast paths)
+└── test_feast.py              # Integration tests for apply/materialize/retrieve
+```
+
+**Quickstart:**
+
+```bash
+# 1. Prepare Feast data sources (consolidate processed features)
+python -m src.features.feast_prep
+
+# 2. Apply Feast definitions (creates registry + SQLite online store)
+feast -c feature_repo apply
+
+# 3. Materialize features into the online store
+feast -c feature_repo materialize 2025-03-14T00:00:00 2025-03-17T00:00:00
+
+# 4. Run integration tests
+pytest tests/test_feast.py -v
+```
 
 ### Step 1.4 — Target Variable Construction
 
@@ -511,11 +546,13 @@ f1-telemetry-mlops/
 ├── data/
 │   ├── raw/                          # Raw Parquet files from FastF1
 │   ├── processed/                    # Engineered features
+│   ├── feast/                        # Consolidated Feast data sources, registry, online store
 │   └── reference/                    # Static circuit characteristics CSV
 │
 ├── tests/
 │   ├── test_ingestion.py
 │   ├── test_features.py
+│   ├── test_feast.py                 # Feast feature store integration tests
 │   ├── test_training.py
 │   ├── test_serving.py
 │   └── conftest.py
@@ -555,8 +592,9 @@ source .venv/bin/activate  # Linux/macOS
 # Install dependencies
 pip install -e ".[dev]"
 
-# Initialize the Feast feature store
-cd feature_repo && feast apply && cd ..
+# Prepare Feast data sources & initialize the feature store
+python -m src.features.feast_prep
+feast -c feature_repo apply
 
 # Start MLflow tracking server
 mlflow server --backend-store-uri sqlite:///mlflow.db --default-artifact-root ./mlartifacts --port 5000

@@ -4,6 +4,7 @@ from src.ingestion.constants import RAW_DATA_DIR
 
 PROCESSED_DATA_DIR = Path("data/processed")
 CIRCUIT_REF_PATH = Path("data/reference/circuit_characteristics.csv")
+FEAST_DATA_DIR = Path("data/feast")
 
 FUEL_CORRECTION_PER_LAP = 0.06  # seconds gained per lap of fuel burn
 DIRTY_AIR_THRESHOLD_S = 1.5  # gap in seconds below which dirty air affects car
@@ -14,6 +15,20 @@ SECTOR_TIME_COLUMNS = ["Sector1Time", "Sector2Time", "Sector3Time"]
 
 # TrackStatus codes that indicate safety car / VSC periods
 SC_TRACK_STATUS_CODES = {"4", "5", "6", "7"}
+
+# Hour offsets from event_date to separate sessions within a weekend and
+# preserve chronological ordering for Feast point-in-time joins.
+SESSION_HOUR_OFFSETS: dict[str, int] = {
+    "FP1": -48,
+    "FP2": -44,
+    "FP3": -24,
+    "Sprint_Qualifying": -28,
+    "Sprint": -20,
+    "Qualifying": -18,
+    "Race": 0,
+}
+
+FEAST_ENTITY_COLUMNS = ["session_id", "driver_number", "stint_number", "location"]
 
 ENGINEERED_FEATURE_COLUMNS = [
     "stint_lap_number",
