@@ -28,6 +28,14 @@ SESSION_HOUR_OFFSETS: dict[str, int] = {
     "Race": 0,
 }
 
+TRAINING_DATA_DIR = Path("data/training")
+
+# Target variable construction
+CLIFF_THRESHOLD_S = 1.5  # seconds above stint average that defines a tire cliff
+MIN_STINT_LAPS = 3  # minimum clean laps for a stint to be usable for training
+
+TARGET_COLUMNS = ["cliff_lap", "laps_to_cliff", "is_censored", "laps_remaining_in_stint"]
+
 FEAST_ENTITY_COLUMNS = ["session_id", "driver_number", "stint_number", "location"]
 
 ENGINEERED_FEATURE_COLUMNS = [

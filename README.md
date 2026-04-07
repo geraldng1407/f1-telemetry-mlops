@@ -125,15 +125,15 @@ Build a Dagster pipeline that pulls historical race data from FastF1 and writes 
 
 **Tasks:**
 
-- [ ] Set up Python environment with `fastf1`, `dagster`, `pandas`, `pyarrow`
-- [ ] Write Dagster assets (multi-partitioned by season + round) that download FastF1 data into Parquet:
+- [x] Set up Python environment with `fastf1`, `dagster`, `pandas`, `pyarrow`
+- [x] Write Dagster assets (multi-partitioned by season + round) that download FastF1 data into Parquet:
   - `raw_session_metadata` — event/session metadata (name, date, location, session type, format)
   - `raw_lap_data` — lap-by-lap timing (sectors, pit in/out); includes compound, tyre life, and stint columns per lap
   - `raw_telemetry_data` — car telemetry (~4 Hz: speed, RPM, gear, throttle, brake, DRS, etc.), per session and driver
   - `raw_weather_data` — session weather (air/track temp, humidity, rainfall, wind)
-- [ ] Implement incremental loading: track which (season, round) pairs have been ingested; skip re-downloading
+- [x] Implement incremental loading: track which (season, round) pairs have been ingested; skip re-downloading
 - [ ] Backfill seasons 2021–2025 to build a training corpus (partition grid is defined in code; materialize each pair via the job or UI)
-- [ ] Store raw data in `data/raw/{season}/{round}/` as Parquet files, partitioned by session type
+- [x] Store raw data in `data/raw/{season}/{round}/` as Parquet files, partitioned by session type
 
 **Key Files:**
 
@@ -151,13 +151,13 @@ Transform raw telemetry into features that capture degradation signals.
 
 **Tasks:**
 
-- [ ] **Stint-Level Aggregation:** Group laps by stint (pit-to-pit). Calculate stint-normalized lap number (lap 1 of stint, lap 2, etc.)
-- [ ] **Rolling Statistics:** For each driver's stint, compute rolling mean and rolling variance of lap times over windows of 3 and 5 laps. Rising variance is an early cliff signal.
-- [ ] **Sector Deltas:** Compute per-sector time deltas from stint-best. Rear-limited degradation shows up in slow corners (Sector 3 at Barcelona, Sector 2 at Silverstone).
-- [ ] **Tire Age Features:** Current tire age in laps, total distance on compound, fuel-corrected lap time (subtract ~0.06s per lap of fuel burn).
-- [ ] **Environmental Features:** Track temperature at lap start, track evolution index (how much rubber is laid down — compute from session-wide lap time improvement).
-- [ ] **Traffic/Dirty Air Features:** Gap to car ahead (seconds). If gap < 1.5s, flag as "dirty air exposure." Cumulative dirty-air laps in current stint.
-- [ ] **Track-Specific Static Features:** Manually curate a reference table of circuit characteristics — number of high-speed corners, surface abrasiveness rating, altitude, typical tire-limited nature (front vs. rear).
+- [x] **Stint-Level Aggregation:** Group laps by stint (pit-to-pit). Calculate stint-normalized lap number (lap 1 of stint, lap 2, etc.)
+- [x] **Rolling Statistics:** For each driver's stint, compute rolling mean and rolling variance of lap times over windows of 3 and 5 laps. Rising variance is an early cliff signal.
+- [x] **Sector Deltas:** Compute per-sector time deltas from stint-best. Rear-limited degradation shows up in slow corners (Sector 3 at Barcelona, Sector 2 at Silverstone).
+- [x] **Tire Age Features:** Current tire age in laps, total distance on compound, fuel-corrected lap time (subtract ~0.06s per lap of fuel burn).
+- [x] **Environmental Features:** Track temperature at lap start, track evolution index (how much rubber is laid down — compute from session-wide lap time improvement).
+- [x] **Traffic/Dirty Air Features:** Gap to car ahead (seconds). If gap < 1.5s, flag as "dirty air exposure." Cumulative dirty-air laps in current stint.
+- [x] **Track-Specific Static Features:** Manually curate a reference table of circuit characteristics — number of high-speed corners, surface abrasiveness rating, altitude, typical tire-limited nature (front vs. rear).
 
 **Key Output Features:**
 
@@ -228,9 +228,38 @@ pytest tests/test_feast.py -v
 
 ### Step 1.4 — Target Variable Construction
 
-- [ ] For each stint in the historical data, identify the "cliff lap" — the first lap where lap time exceeds `stint_average + 1.5s` (excluding laps with yellow flags, pit-in laps, or safety car periods)
-- [ ] Compute target: `laps_to_cliff = cliff_lap - current_lap`. If no cliff occurred (stint ended by strategic pit), label as censored and handle via survival analysis framing or clip to stint length.
-- [ ] Build a labeled training dataset by joining features and targets via point-in-time join through Feast
+- [x] For each stint in the historical data, identify the "cliff lap" — the first lap where lap time exceeds `stint_average + 1.5s` (excluding laps with yellow flags, pit-in laps, or safety car periods)
+- [x] Compute target: `laps_to_cliff = cliff_lap - current_lap`. If no cliff occurred (stint ended by strategic pit), label as censored and handle via survival analysis framing or clip to stint length.
+- [x] Build a labeled training dataset by joining features and targets via point-in-time join through Feast
+
+**Key Files:**
+
+```
+src/features/
+├── target.py                 # Cliff detection and laps_to_cliff computation
+├── dataset.py                # Feast point-in-time join, labeled dataset builder
+├── quality.py                # Data quality checks and feature distribution report
+└── constants.py              # (updated) CLIFF_THRESHOLD_S, MIN_STINT_LAPS, TRAINING_DATA_DIR
+
+tests/
+└── test_target.py            # Unit tests for cliff detection and target construction
+```
+
+**Quickstart:**
+
+```bash
+# 1. Compute targets and build labeled dataset (with Feast)
+python -m src.features.dataset
+
+# 1b. Or without Feast (directly from consolidated features)
+python -m src.features.dataset --no-feast
+
+# 2. Run data quality checks
+python -m src.features.quality
+
+# 3. Run unit tests
+pytest tests/test_target.py -v
+```
 
 **Phase 1 Deliverables:**
 - Dagster pipeline that ingests 4+ seasons of data on a schedule
@@ -494,7 +523,11 @@ f1-telemetry-mlops/
 │   │
 │   ├── features/                     # Phase 1: Feature engineering
 │   │   ├── engineering.py            # Feature transformation logic
-│   │   ├── target.py                 # Target variable construction
+│   │   ├── target.py                 # Cliff detection and target variable construction
+│   │   ├── dataset.py               # Labeled training dataset builder (Feast PIT join)
+│   │   ├── quality.py               # Data quality checks and distribution report
+│   │   ├── feast_prep.py            # Consolidate features into Feast data sources
+│   │   ├── constants.py             # Feature engineering constants and thresholds
 │   │   └── __init__.py
 │   │
 │   ├── training/                     # Phase 2: Model training
@@ -547,11 +580,13 @@ f1-telemetry-mlops/
 │   ├── raw/                          # Raw Parquet files from FastF1
 │   ├── processed/                    # Engineered features
 │   ├── feast/                        # Consolidated Feast data sources, registry, online store
+│   ├── training/                     # Labeled dataset, quality reports, dataset summary
 │   └── reference/                    # Static circuit characteristics CSV
 │
 ├── tests/
 │   ├── test_ingestion.py
 │   ├── test_features.py
+│   ├── test_target.py                # Cliff detection and target variable tests
 │   ├── test_feast.py                 # Feast feature store integration tests
 │   ├── test_training.py
 │   ├── test_serving.py
