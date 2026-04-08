@@ -23,6 +23,15 @@ dev = [
     "ruff>=0.8",
     "mypy>=1.13",
 ]
+training = [
+    "mlflow>=2.15",
+    "xgboost>=2.1",
+    "lightgbm>=4.5",
+    "scikit-learn>=1.5",
+    "optuna>=4.0",
+    "shap>=0.46",
+    "boto3>=1.35",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]
