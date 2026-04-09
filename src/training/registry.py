@@ -7,13 +7,11 @@ API (MLflow >= 2.9).
 
 from __future__ import annotations
 
-import os
-
 import mlflow
 from loguru import logger
 from mlflow.tracking import MlflowClient
 
-MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
+from src.training.base import MLFLOW_TRACKING_URI
 
 _mlflow_version = tuple(int(x) for x in mlflow.__version__.split(".")[:2])
 _USE_ALIASES = _mlflow_version >= (2, 9)

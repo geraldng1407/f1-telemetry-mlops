@@ -277,16 +277,16 @@ pytest tests/test_target.py -v
 
 **Tasks:**
 
-- [ ] Set up MLflow tracking server (local or remote) with a PostgreSQL backend and S3 artifact store
-- [ ] Create a base training script that:
-  - Pulls features from the Feast offline store via `get_historical_features()`
-  - Splits data by time (train on 2021–2023, validate on 2024 early-season, test on 2024 late-season)
-  - Logs all hyperparameters, metrics, and artifacts to MLflow
-- [ ] Define evaluation metrics:
+- [x] Set up MLflow tracking server (local or remote) with a PostgreSQL backend and S3 artifact store (`docker compose up` — Postgres + MinIO + MLflow; see `docker-compose.yml`)
+- [x] Create a base training script that:
+  - Pulls features from the Feast offline store via `get_historical_features()` (`python -m src.features.dataset --help` / `load_training_data(..., rebuild=True)` in `src/training/base.py`)
+  - Splits data by time (train on 2021–2023, validate on 2024 early-season, test on 2024 late-season) — `split_by_time()` in `src/training/base.py`
+  - Logs all hyperparameters, metrics, and artifacts to MLflow — `run_experiment()` / `python -m src.training.baseline`
+- [x] Define evaluation metrics (`src/training/metrics.py`):
   - **MAE** of predicted `laps_to_cliff` vs. actual
   - **Precision@3**: is the predicted cliff lap within 3 laps of the actual?
   - **Strategy Accuracy**: would the model's recommendation have beaten the team's actual strategy?
-- [ ] Set up MLflow model registry with `Staging` and `Production` stages
+- [x] Set up MLflow model registry with `Staging` and `Production` stages — `src/training/registry.py` (`promote_model`, aliases on MLflow ≥ 2.9)
 
 ### Step 2.2 — Baseline Model (XGBoost / LightGBM)
 
@@ -531,10 +531,10 @@ f1-telemetry-mlops/
 │   │   └── __init__.py
 │   │
 │   ├── training/                     # Phase 2: Model training
-│   │   ├── baseline.py               # XGBoost / LightGBM training
-│   │   ├── sequential.py             # LSTM / TFT training
-│   │   ├── evaluation.py             # Metrics, SHAP, validation suite
-│   │   ├── hyperopt.py               # Optuna hyperparameter search
+│   │   ├── base.py                   # Load/split, MLflow run_experiment harness
+│   │   ├── baseline.py               # CLI: XGBoost baseline (`python -m src.training.baseline`)
+│   │   ├── metrics.py                # MAE, Precision@K, strategy accuracy
+│   │   ├── registry.py               # MLflow model registry (Staging / Production)
 │   │   └── __init__.py
 │   │
 │   ├── drift/                        # Phase 3: Drift detection
@@ -625,14 +625,18 @@ source .venv/bin/activate  # Linux/macOS
 .venv\Scripts\activate     # Windows
 
 # Install dependencies
-pip install -e ".[dev]"
+pip install -e ".[dev,training]"
 
 # Prepare Feast data sources & initialize the feature store
 python -m src.features.feast_prep
 feast -c feature_repo apply
 
-# Start MLflow tracking server
-mlflow server --backend-store-uri sqlite:///mlflow.db --default-artifact-root ./mlartifacts --port 5000
+# Build labeled training data (Feast historical features); writes data/training/labeled_dataset.parquet
+python -m src.features.dataset
+
+# Start MLflow: quick local (SQLite + local artifacts) OR Postgres + S3-compatible artifacts:
+#   mlflow server --backend-store-uri sqlite:///mlflow.db --default-artifact-root ./mlartifacts --port 5000
+#   docker compose up -d postgres minio minio-init mlflow
 
 # Run the ingestion job for one weekend partition (round | season, e.g. round 5, 2024)
 dagster job execute -m src.ingestion -a defs -j ingest_race_weekend --tags '{"dagster/partition": "5|2024"}'

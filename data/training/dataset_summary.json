@@ -1,0 +1,17 @@
+{
+  "total_rows": 621,
+  "total_stints": 164,
+  "total_sessions": 5,
+  "seasons": [
+    "2025"
+  ],
+  "censored_pct": 22.06,
+  "mean_laps_to_cliff": 2.76,
+  "median_laps_to_cliff": 1.0,
+  "compound_distribution": {
+    "MEDIUM": 337,
+    "INTERMEDIATE": 134,
+    "SOFT": 85,
+    "HARD": 65
+  }
+}

@@ -31,6 +31,7 @@ training = [
     "optuna>=4.0",
     "shap>=0.46",
     "boto3>=1.35",
+    "tqdm>=4.66",
 ]
 
 [tool.setuptools.packages.find]

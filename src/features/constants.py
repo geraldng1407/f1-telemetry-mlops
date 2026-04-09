@@ -65,6 +65,6 @@ ENGINEERED_FEATURE_COLUMNS = [
     "circuit_low_speed_corners",
     "circuit_abrasiveness",
     "circuit_altitude_m",
-    "circuit_tire_limitation",
+    "circuit_tire_limitation",  # string in source data ("rear"/"front"); encoded in training
     "circuit_street_circuit",
 ]

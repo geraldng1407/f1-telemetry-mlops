@@ -35,7 +35,11 @@ def mae_laps_to_cliff(
     is_censored:
         Binary array; if provided, only uncensored rows (``== 0``) are scored.
     """
+    if len(y_true) == 0:
+        return float("nan")
     mask = _uncensored_mask(is_censored, len(y_true))
+    if not np.any(mask):
+        return float("nan")
     return float(mean_absolute_error(y_true[mask], y_pred[mask]))
 
 
