@@ -32,6 +32,14 @@ training = [
     "shap>=0.46",
     "boto3>=1.35",
     "tqdm>=4.66",
+    "torch>=2.2",
+    "pytorch-lightning>=2.2",
+    "pytorch-forecasting>=1.0",
+]
+sequential = [
+    "torch>=2.2",
+    "pytorch-lightning>=2.2",
+    "pytorch-forecasting>=1.0",
 ]
 
 [tool.setuptools.packages.find]

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import math
 import os
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
@@ -43,6 +44,31 @@ VAL_MAX_ROUND = 12
 TEST_SEASON = "2024"
 
 FEATURE_COLUMNS = [c for c in ENGINEERED_FEATURE_COLUMNS]
+
+
+# ---------------------------------------------------------------------------
+# ExperimentResult
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class ExperimentResult:
+    """All outputs from a single training run, for downstream analysis."""
+
+    run_id: str
+    model: Any
+    feature_names: list[str]
+    X_train: np.ndarray
+    y_train: np.ndarray
+    X_val: np.ndarray
+    y_val: np.ndarray
+    X_test: np.ndarray
+    y_test: np.ndarray
+    test_df: pd.DataFrame
+    train_metrics: dict[str, float] = field(default_factory=dict)
+    val_metrics: dict[str, float] = field(default_factory=dict)
+    test_metrics: dict[str, float] = field(default_factory=dict)
+
 
 # ---------------------------------------------------------------------------
 # Data loading
@@ -311,6 +337,8 @@ def log_to_mlflow(
             mlflow.xgboost.log_model(model, name="model")
         elif model_type == "lightgbm":
             mlflow.lightgbm.log_model(model, name="model")
+        elif model_type == "pytorch":
+            mlflow.pytorch.log_model(model, name="model")
 
         if artifacts:
             for name, path in artifacts.items():
@@ -339,7 +367,7 @@ def run_experiment(
     rebuild_dataset: bool = False,
     show_training_progress: bool = True,
     allow_adaptive_split: bool = True,
-) -> str:
+) -> ExperimentResult:
     """End-to-end: load data, split, train, evaluate, log to MLflow.
 
     Parameters
@@ -369,7 +397,8 @@ def run_experiment(
 
     Returns
     -------
-    The MLflow run ID.
+    An :class:`ExperimentResult` containing the run ID, fitted model,
+    feature names, split arrays, and evaluation metrics.
     """
     if experiment_name:
         global MLFLOW_EXPERIMENT  # noqa: PLW0603
@@ -404,6 +433,8 @@ def run_experiment(
                 "Validation split is empty under adaptive split; training without eval_set."
             )
 
+    feature_names = get_feature_names(train_df)
+
     X_train, y_train = prepare_features(train_df, fit_encoder=True)
     X_val, y_val = prepare_features(val_df)
     X_test, y_test = prepare_features(test_df)
@@ -419,7 +450,6 @@ def run_experiment(
             show_progress=show_training_progress,
         )
     except TypeError as exc:
-        # Do not swallow TypeErrors raised inside model_fn (e.g. from model.fit).
         err = str(exc)
         if "unexpected keyword argument" in err and any(
             kw in err for kw in ("eval_set", "show_progress")
@@ -453,4 +483,18 @@ def run_experiment(
         model_type=model_type,
         tags=merged_tags,
     )
-    return run_id
+    return ExperimentResult(
+        run_id=run_id,
+        model=model,
+        feature_names=feature_names,
+        X_train=X_train,
+        y_train=y_train,
+        X_val=X_val,
+        y_val=y_val,
+        X_test=X_test,
+        y_test=y_test,
+        test_df=test_df,
+        train_metrics=train_metrics,
+        val_metrics=val_metrics,
+        test_metrics=test_metrics,
+    )

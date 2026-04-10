@@ -4,6 +4,12 @@ Uses ``run_experiment`` (Feast-backed dataset when rebuilt, temporal split,
 MLflow logging). Requires ``pip install -e ".[training]"`` and a running
 By default uses SQLite at ``./mlflow.db`` and artifacts under ``./mlartifacts``
 (no server). Set ``MLFLOW_TRACKING_URI`` (e.g. ``http://localhost:5000``) for Docker MLflow.
+
+Extended flags:
+  --tune          Run Optuna hyperparameter search before final training
+  --n-trials N    Number of Optuna trials (default 50)
+  --shap          Compute and log SHAP explanations after training
+  --promote       Promote registered model to MLflow Staging
 """
 
 from __future__ import annotations
@@ -15,7 +21,7 @@ from typing import Any
 
 from loguru import logger
 
-from src.training.base import run_experiment
+from src.training.base import ExperimentResult, run_experiment
 
 DEFAULT_XGB_PARAMS: dict[str, Any] = {
     "n_estimators": 300,
@@ -49,7 +55,6 @@ def xgb_model_fn(
         X_val, y_val = eval_set
         fit_kwargs["eval_set"] = [(X_val, y_val)]
 
-    # Older XGBoost sklearn wrappers may not support fit(..., callbacks=...).
     supports_fit_callbacks = "callbacks" in inspect.signature(model.fit).parameters
 
     tqdm_cb = None
@@ -74,7 +79,6 @@ def xgb_model_fn(
                 def after_iteration(self, model: Any, epoch: int, evals_log: dict) -> bool:
                     self._pbar.update(1)
                     if evals_log:
-                        # e.g. {"validation_0": {"rmse": [0.42, ...]}}
                         parts = []
                         for name, metrics in evals_log.items():
                             for mname, history in metrics.items():
@@ -90,7 +94,6 @@ def xgb_model_fn(
             tqdm_cb = _TqdmTrainCallback()
             fit_kwargs.setdefault("callbacks", []).append(tqdm_cb)
         elif fit_kwargs.get("eval_set"):
-            # No tqdm bar (missing tqdm or no callback support): XGBoost prints each boost round
             fit_kwargs["verbose"] = True
         else:
             logger.info(
@@ -130,14 +133,38 @@ def main(argv: list[str] | None = None) -> int:
         "-q",
         "--quiet",
         action="store_true",
-        help="Disable tqdm progress bar during boosting (still logs metrics via loguru after training).",
+        help="Disable tqdm progress bar during boosting.",
     )
     parser.add_argument(
         "--no-adaptive-split",
         action="store_true",
-        help="Do not fall back to chronological split when 2021–2024 canonical split has no train rows.",
+        help="Do not fall back to chronological split when 2021-2024 canonical split has no train rows.",
+    )
+    parser.add_argument(
+        "--tune",
+        action="store_true",
+        help="Run Optuna hyperparameter search before the final training run.",
+    )
+    parser.add_argument(
+        "--n-trials",
+        type=int,
+        default=50,
+        help="Number of Optuna trials (default: 50). Only used with --tune.",
+    )
+    parser.add_argument(
+        "--shap",
+        action="store_true",
+        help="Compute SHAP explanations after training and log as MLflow artifacts.",
+    )
+    parser.add_argument(
+        "--promote",
+        action="store_true",
+        help="Promote the registered model to MLflow Staging (implies --register).",
     )
     args = parser.parse_args(argv)
+
+    if args.promote:
+        args.register = True
 
     try:
         import xgboost  # noqa: F401
@@ -145,10 +172,29 @@ def main(argv: list[str] | None = None) -> int:
         logger.error('Missing optional deps; run: pip install -e ".[training]"')
         return 1
 
+    # --- 1. Optuna tuning (optional) ---
+    params = dict(DEFAULT_XGB_PARAMS)
+    if args.tune:
+        from src.training.tuning import run_tuning_study
+
+        logger.info("Starting Optuna tuning with {} trials", args.n_trials)
+        params = run_tuning_study(
+            n_trials=args.n_trials,
+            experiment_name=args.experiment,
+            rebuild_dataset=args.rebuild_dataset,
+            allow_adaptive_split=not args.no_adaptive_split,
+        )
+        logger.info("Tuning complete; best params: {}", params)
+
+    # --- 2. Final training run ---
     tags = {"model_family": "xgboost", "script": "baseline"}
-    run_id = run_experiment(
+    if args.tune:
+        tags["tuning"] = "optuna"
+        tags["n_trials"] = str(args.n_trials)
+
+    result: ExperimentResult = run_experiment(
         xgb_model_fn,
-        dict(DEFAULT_XGB_PARAMS),
+        params,
         experiment_name=args.experiment,
         model_type="xgboost",
         tags=tags,
@@ -156,13 +202,41 @@ def main(argv: list[str] | None = None) -> int:
         show_training_progress=not args.quiet,
         allow_adaptive_split=not args.no_adaptive_split,
     )
-    logger.info("MLflow run_id={}", run_id)
+    logger.info("MLflow run_id={}", result.run_id)
 
+    # --- 3. Feature importance (always — cheap) ---
+    from src.training.explainability import compute_feature_importance
+
+    compute_feature_importance(
+        result.model,
+        result.feature_names,
+        run_id=result.run_id,
+    )
+
+    # --- 4. SHAP explanations (optional) ---
+    if args.shap:
+        from src.training.explainability import compute_shap_explanations
+
+        logger.info("Computing SHAP explanations on test set ({} samples)", len(result.X_test))
+        compute_shap_explanations(
+            result.model,
+            result.X_test,
+            result.feature_names,
+            run_id=result.run_id,
+        )
+
+    # --- 5. Register & promote ---
     if args.register:
         from src.training.registry import register_model
 
-        version = register_model(run_id)
+        version = register_model(result.run_id)
         logger.info("Registered model version {}", version)
+
+        if args.promote:
+            from src.training.registry import promote_model
+
+            promote_model("tire-cliff-xgboost", version, stage="Staging")
+            logger.info("Promoted model version {} to Staging", version)
 
     return 0
 

@@ -294,11 +294,11 @@ Tree-based models excel at discovering non-linear interaction thresholds — exa
 
 **Tasks:**
 
-- [ ] Train an XGBoost regressor on the tabular feature set, predicting `laps_to_cliff`
-- [ ] Perform hyperparameter tuning via Optuna (n_estimators, max_depth, learning_rate, min_child_weight)
-- [ ] Analyze feature importance: expect `tire_age_laps`, `rolling_var_laptime_5`, `track_temp_c`, and `compound` to dominate
-- [ ] Generate SHAP explanations for individual predictions (e.g., "Why does the model think Norris's softs will cliff on lap 22?")
-- [ ] Log the best model to MLflow, register it, and promote to `Staging`
+- [x] Train an XGBoost regressor on the tabular feature set, predicting `laps_to_cliff`
+- [x] Perform hyperparameter tuning via Optuna (n_estimators, max_depth, learning_rate, min_child_weight)
+- [x] Analyze feature importance: expect `tire_age_laps`, `rolling_var_laptime_5`, `track_temp_c`, and `compound` to dominate
+- [x] Generate SHAP explanations for individual predictions (e.g., "Why does the model think Norris's softs will cliff on lap 22?")
+- [x] Log the best model to MLflow, register it, and promote to `Staging`
 
 **Expected Baseline Performance:**
 
@@ -307,22 +307,83 @@ Tree-based models excel at discovering non-linear interaction thresholds — exa
 | MAE           | < 4 laps |
 | Precision@3   | > 55%    |
 
+**Key Files:**
+
+```
+src/training/
+├── base.py                  # ExperimentResult dataclass, run_experiment harness
+├── baseline.py              # CLI entry point (--tune, --shap, --promote flags)
+├── tuning.py                # Optuna hyperparameter search (run_tuning_study)
+├── explainability.py        # Feature importance + SHAP (TreeExplainer)
+├── metrics.py               # MAE, Precision@K, strategy accuracy
+└── registry.py              # MLflow model registry helpers
+```
+
+**Quickstart:**
+
+```bash
+# 1. Train with default hyperparameters (logs to MLflow)
+python -m src.training.baseline
+
+# 2. Optuna tuning (50 trials) + SHAP + register & promote to Staging
+python -m src.training.baseline --tune --n-trials 50 --shap --promote
+
+# 3. Quick run: tune 10 trials, no SHAP, just register
+python -m src.training.baseline --tune --n-trials 10 --register
+
+# 4. Run training tests
+pytest tests/test_training.py -v
+```
+
 ### Step 2.3 — Sequential Model (LSTM / Temporal Fusion Transformer)
 
 Lap times are a time series within each stint. Sequential models can learn the *shape* of the degradation curve.
 
 **Tasks:**
 
-- [ ] Prepare sequence data: for each stint, create a sliding window of the last N laps' features as input, with `laps_to_cliff` as the target
-- [ ] Implement an LSTM-based model in PyTorch:
+- [x] Prepare sequence data: for each stint, create a sliding window of the last N laps' features as input, with `laps_to_cliff` as the target
+- [x] Implement an LSTM-based model in PyTorch:
   - Input: sequence of per-lap feature vectors (length 5–10)
   - Architecture: 2-layer LSTM → fully connected head → scalar output
   - Loss: Huber loss (robust to outliers from safety car periods)
-- [ ] Implement a Temporal Fusion Transformer (TFT) variant using `pytorch-forecasting`:
+- [x] Implement a Temporal Fusion Transformer (TFT) variant using `pytorch-forecasting`:
   - Leverage its built-in handling of static covariates (circuit, compound) alongside temporal inputs
   - Use its interpretable attention to identify which past laps influence the prediction most
-- [ ] Compare LSTM and TFT against the XGBoost baseline on the same test split
-- [ ] Ensemble: weighted average of XGBoost + best sequential model
+- [x] Compare LSTM and TFT against the XGBoost baseline on the same test split
+- [x] Ensemble: weighted average of XGBoost + best sequential model
+
+**Key Files:**
+
+```
+src/training/
+├── sequence_data.py         # Sliding window construction, StintSequenceDataset, DataLoaders
+├── lstm.py                  # LSTMCliffModel (2-layer LSTM + FC), training loop, LSTMPredictor
+├── tft.py                   # TFT via pytorch-forecasting, TFTPredictor, attention logging
+├── ensemble.py              # Weighted ensemble (XGBoost + sequential), alpha optimisation
+└── sequential.py            # CLI entry point (`python -m src.training.sequential`)
+```
+
+**Quickstart:**
+
+```bash
+# 1. Train LSTM with default hyperparameters (logs to MLflow)
+python -m src.training.sequential
+
+# 2. Train TFT instead
+python -m src.training.sequential --model tft
+
+# 3. Train both LSTM and TFT, compare on the same test split
+python -m src.training.sequential --compare
+
+# 4. Build weighted ensemble with XGBoost baseline
+python -m src.training.sequential --ensemble
+
+# 5. Register + promote best sequential model to Staging
+python -m src.training.sequential --register --promote
+
+# 6. Run sequential model tests
+pytest tests/test_sequential.py -v
+```
 
 ### Step 2.4 — The Williams Midfield Validation
 
@@ -531,8 +592,15 @@ f1-telemetry-mlops/
 │   │   └── __init__.py
 │   │
 │   ├── training/                     # Phase 2: Model training
-│   │   ├── base.py                   # Load/split, MLflow run_experiment harness
+│   │   ├── base.py                   # Load/split, MLflow run_experiment harness, ExperimentResult
 │   │   ├── baseline.py               # CLI: XGBoost baseline (`python -m src.training.baseline`)
+│   │   ├── sequential.py             # CLI: LSTM/TFT (`python -m src.training.sequential`)
+│   │   ├── sequence_data.py          # Sliding window sequences, StintSequenceDataset
+│   │   ├── lstm.py                   # LSTMCliffModel, training loop, LSTMPredictor
+│   │   ├── tft.py                    # TFT via pytorch-forecasting, TFTPredictor
+│   │   ├── ensemble.py               # Weighted ensemble (XGBoost + sequential)
+│   │   ├── tuning.py                 # Optuna hyperparameter search for XGBoost
+│   │   ├── explainability.py         # Feature importance (native) + SHAP explanations
 │   │   ├── metrics.py                # MAE, Precision@K, strategy accuracy
 │   │   ├── registry.py               # MLflow model registry (Staging / Production)
 │   │   └── __init__.py
@@ -664,6 +732,7 @@ python -m src.streaming.producer --session "2024 British Grand Prix Race" --spee
 | Lint & format             | `ruff check . && ruff format .`          |
 | Type check                | `mypy src/`                              |
 | Train baseline model      | `python -m src.training.baseline`        |
+| Tune + SHAP + promote     | `python -m src.training.baseline --tune --shap --promote` |
 | Train sequential model    | `python -m src.training.sequential`      |
 | Generate drift report     | `python -m src.drift.detection --report` |
 | Start API server (dev)    | `uvicorn src.serving.app:app --reload`   |
