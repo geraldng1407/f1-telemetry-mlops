@@ -5,7 +5,12 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 
-from src.inference.models import DriverStateResponse, PredictionResult, RaceStateResponse
+from src.inference.models import (
+    DriverStateResponse,
+    LapTimeEntry,
+    PredictionResult,
+    RaceStateResponse,
+)
 from src.streaming.models import LapCompletedEvent, RaceControlEvent, RaceControlEventType
 
 
@@ -147,6 +152,14 @@ class RaceStateManager:
 
         drivers = []
         for dn, ds in session.drivers.items():
+            lap_times = [
+                LapTimeEntry(
+                    lap_number=lap.lap_number,
+                    lap_time=lap.lap_time,
+                    tire_age=lap.tire_age,
+                )
+                for lap in ds.laps
+            ]
             drivers.append(
                 DriverStateResponse(
                     driver_number=dn,
@@ -155,6 +168,7 @@ class RaceStateManager:
                     tire_age=ds.tire_age,
                     lap_number=ds.lap_number,
                     latest_prediction=ds.latest_prediction,
+                    lap_times=lap_times,
                 )
             )
         return RaceStateResponse(

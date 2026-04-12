@@ -57,6 +57,13 @@ inference = [
     "structlog>=24.0",
     "xgboost>=2.0",
 ]
+dashboard = [
+    "streamlit>=1.38",
+    "streamlit-autorefresh>=1.0",
+    "plotly>=5.22",
+    "requests>=2.32",
+    "pandas>=2.2",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]

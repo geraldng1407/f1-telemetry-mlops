@@ -108,6 +108,18 @@ services:
       kafka:
         condition: service_healthy
 
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    ports:
+      - "8501:8501"
+    environment:
+      API_URL: http://inference:8000
+    depends_on:
+      inference:
+        condition: service_started
+
 volumes:
   postgres_data:
   minio_data:

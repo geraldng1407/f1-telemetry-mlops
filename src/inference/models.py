@@ -16,6 +16,12 @@ class PredictionResult(BaseModel):
     confidence_upper: float
 
 
+class LapTimeEntry(BaseModel):
+    lap_number: int
+    lap_time: float | None
+    tire_age: int | None
+
+
 class DriverStateResponse(BaseModel):
     driver_number: str
     stint_number: int
@@ -23,6 +29,7 @@ class DriverStateResponse(BaseModel):
     tire_age: int | None = None
     lap_number: int
     latest_prediction: PredictionResult | None = None
+    lap_times: list[LapTimeEntry] = Field(default_factory=list)
 
 
 class RaceStateResponse(BaseModel):

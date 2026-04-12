@@ -14,6 +14,7 @@ from src.inference.feature_computer import (
 )
 from src.inference.models import (
     DriverStateResponse,
+    LapTimeEntry,
     PredictionResult,
     RaceStateResponse,
 )
@@ -267,6 +268,44 @@ class TestRaceStateManager:
         assert resp.drivers[0].driver_number == "44"
 
     @pytest.mark.asyncio
+    async def test_build_race_state_populates_lap_times(self, manager: RaceStateManager):
+        for i in range(1, 4):
+            e = LapCompletedEvent(
+                session_id="2024_12_Race", driver_number="16", lap_number=i,
+                lap_time=90.0 + i * 0.3, compound="SOFT", tire_age=i,
+            )
+            await manager.update_lap(e)
+
+        resp = manager.build_race_state_response("2024_12_Race")
+        driver_resp = resp.drivers[0]
+        assert len(driver_resp.lap_times) == 3
+        assert driver_resp.lap_times[0].lap_number == 1
+        assert driver_resp.lap_times[0].lap_time == pytest.approx(90.3)
+        assert driver_resp.lap_times[0].tire_age == 1
+        assert driver_resp.lap_times[2].lap_number == 3
+        assert driver_resp.lap_times[2].tire_age == 3
+
+    @pytest.mark.asyncio
+    async def test_lap_times_reset_on_stint_change(self, manager: RaceStateManager):
+        e1 = LapCompletedEvent(
+            session_id="2024_12_Race", driver_number="16", lap_number=10,
+            lap_time=92.0, compound="SOFT", tire_age=10,
+        )
+        await manager.update_lap(e1)
+
+        e2 = LapCompletedEvent(
+            session_id="2024_12_Race", driver_number="16", lap_number=11,
+            lap_time=91.0, compound="HARD", tire_age=1,
+        )
+        await manager.update_lap(e2)
+
+        resp = manager.build_race_state_response("2024_12_Race")
+        driver_resp = resp.drivers[0]
+        assert len(driver_resp.lap_times) == 1
+        assert driver_resp.lap_times[0].lap_number == 11
+        assert driver_resp.lap_times[0].tire_age == 1
+
+    @pytest.mark.asyncio
     async def test_websocket_subscribe_and_broadcast(self, manager: RaceStateManager):
         q = manager.subscribe("2024_12_Race")
         await manager.broadcast("2024_12_Race", '{"test": true}')
@@ -315,6 +354,43 @@ class TestResponseModels:
         restored = RaceStateResponse.model_validate_json(resp.model_dump_json())
         assert restored.session_id == "2024_12_Race"
         assert len(restored.drivers) == 1
+
+    def test_lap_time_entry_roundtrip(self):
+        entry = LapTimeEntry(lap_number=5, lap_time=91.234, tire_age=5)
+        restored = LapTimeEntry.model_validate_json(entry.model_dump_json())
+        assert restored.lap_number == 5
+        assert restored.lap_time == pytest.approx(91.234)
+        assert restored.tire_age == 5
+
+    def test_lap_time_entry_nullable_fields(self):
+        entry = LapTimeEntry(lap_number=1, lap_time=None, tire_age=None)
+        data = entry.model_dump()
+        assert data["lap_time"] is None
+        assert data["tire_age"] is None
+
+    def test_driver_state_response_with_lap_times(self):
+        resp = DriverStateResponse(
+            driver_number="44",
+            stint_number=1,
+            compound="MEDIUM",
+            tire_age=3,
+            lap_number=3,
+            lap_times=[
+                LapTimeEntry(lap_number=1, lap_time=92.0, tire_age=1),
+                LapTimeEntry(lap_number=2, lap_time=91.5, tire_age=2),
+                LapTimeEntry(lap_number=3, lap_time=91.2, tire_age=3),
+            ],
+        )
+        restored = DriverStateResponse.model_validate_json(resp.model_dump_json())
+        assert len(restored.lap_times) == 3
+        assert restored.lap_times[0].lap_time == pytest.approx(92.0)
+        assert restored.lap_times[2].tire_age == 3
+
+    def test_driver_state_response_defaults_empty_lap_times(self):
+        resp = DriverStateResponse(
+            driver_number="1", stint_number=1, lap_number=1,
+        )
+        assert resp.lap_times == []
 
 
 # ---------------------------------------------------------------------------
@@ -396,3 +472,22 @@ class TestEndpoints:
         data = resp.json()
         assert len(data["drivers"]) == 1
         assert data["drivers"][0]["driver_number"] == "44"
+
+    def test_race_state_includes_lap_times(self, client, mock_runner):
+        for i in range(1, 3):
+            client.post("/predict", json={
+                "session_id": "2024_12_Race",
+                "driver_number": "1",
+                "lap_number": i,
+                "lap_time": 90.0 + i,
+                "compound": "SOFT",
+                "tire_age": i,
+            })
+
+        resp = client.get("/race/2024_12_Race/state")
+        data = resp.json()
+        driver = data["drivers"][0]
+        assert "lap_times" in driver
+        assert len(driver["lap_times"]) == 2
+        assert driver["lap_times"][0]["lap_number"] == 1
+        assert driver["lap_times"][0]["tire_age"] == 1
