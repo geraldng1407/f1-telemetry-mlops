@@ -146,6 +146,19 @@ def build_labeled_dataset(
         labeled_df["compound"] = compound_map.reindex(join_idx).values
 
     # ------------------------------------------------------------------
+    # 3b. Add team column (needed for midfield validation slicing)
+    # ------------------------------------------------------------------
+    if "Team" in raw_df.columns and "team" not in labeled_df.columns:
+        team_map = raw_df.set_index(
+            STINT_GROUP_KEYS + ["stint_lap_number"]
+        )["Team"]
+        team_map = team_map[~team_map.index.duplicated(keep="first")]
+        join_idx = labeled_df.set_index(
+            STINT_GROUP_KEYS + ["stint_lap_number"]
+        ).index
+        labeled_df["team"] = team_map.reindex(join_idx).values
+
+    # ------------------------------------------------------------------
     # 4. Write and report
     # ------------------------------------------------------------------
     output_path.parent.mkdir(parents=True, exist_ok=True)
